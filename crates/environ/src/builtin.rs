@@ -40,6 +40,7 @@ macro_rules! foreach_builtin_function {
             // Invoked when fuel has run out while executing a function.
             out_of_gas(vmctx: vmctx) -> bool;
             // Invoked when we reach a new epoch.
+            #[cfg(target_has_atomic = "64")]
             new_epoch(vmctx: vmctx) -> u64;
             // Invoked before malloc returns.
             #[cfg(feature = "wmemcheck")]
@@ -252,7 +253,6 @@ macro_rules! declare_builtin_index_constructors {
         /// Returns a symbol name for this builtin.
         pub fn name(&self) -> &'static str {
             $(
-                $( #[$attr] )*
                 if *self == Self::$name() {
                     return stringify!($name);
                 }
@@ -285,7 +285,6 @@ macro_rules! declare_builtin_index_constructors {
              $rest_name:ident;
          )*
     ) => {
-        $( #[$this_attr] )*
         #[allow(missing_docs, reason = "macro-generated")]
         pub const fn $this_name() -> Self {
             Self($index)

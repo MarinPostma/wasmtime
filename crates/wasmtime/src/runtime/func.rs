@@ -12,11 +12,10 @@ use crate::{
 };
 use alloc::sync::Arc;
 use core::ffi::c_void;
-use core::future::Future;
 use core::mem::{self, MaybeUninit};
-use core::num::NonZeroUsize;
-use core::pin::Pin;
 use core::ptr::NonNull;
+#[cfg(feature = "async")]
+use core::{future::Future, pin::Pin};
 use wasmtime_environ::VMSharedTypeIndex;
 
 /// A reference to the abstract `nofunc` heap value.
@@ -563,8 +562,8 @@ impl Func {
                 .0
                 .async_cx()
                 .expect("Attempt to spawn new action on dying fiber");
-            let mut future = Pin::from(func(caller, params, results));
-            match unsafe { async_cx.block_on(future.as_mut()) } {
+            let future = func(caller, params, results);
+            match unsafe { async_cx.block_on(Pin::from(future)) } {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(trap)) | Err(trap) => Err(trap),
             }
@@ -838,6 +837,7 @@ impl Func {
         }
     }
 
+    #[cfg(feature = "async")]
     fn wrap_inner<F, T, Params, Results>(mut store: impl AsContextMut<Data = T>, func: F) -> Func
     where
         F: Fn(Caller<'_, T>, Params) -> Results + Send + Sync + 'static,
@@ -881,9 +881,9 @@ impl Func {
                 .0
                 .async_cx()
                 .expect("Attempt to start async function on dying fiber");
-            let mut future = Pin::from(func(caller, args));
+            let future = func(caller, args);
 
-            match unsafe { async_cx.block_on(future.as_mut()) } {
+            match unsafe { async_cx.block_on(Pin::from(future)) } {
                 Ok(ret) => ret.into_fallible(),
                 Err(e) => R::fallible_from_error(e),
             }
@@ -1210,7 +1210,7 @@ impl Func {
             // already. If it is at capacity (unlikely) then we need to do a GC
             // to free up space.
             let num_gc_refs = ty.as_wasm_func_type().non_i31_gc_ref_params_count();
-            if let Some(num_gc_refs) = NonZeroUsize::new(num_gc_refs) {
+            if let Some(num_gc_refs) = core::num::NonZeroUsize::new(num_gc_refs) {
                 return Ok(opaque
                     .gc_store()?
                     .gc_heap
@@ -2443,6 +2443,7 @@ impl HostFunc {
     }
 
     /// Analog of [`Func::wrap_inner`]
+    #[cfg(any(feature = "component-model", feature = "async"))]
     pub fn wrap_inner<F, T, Params, Results>(engine: &Engine, func: F) -> Self
     where
         F: Fn(Caller<'_, T>, Params) -> Results + Send + Sync + 'static,
